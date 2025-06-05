@@ -26,7 +26,9 @@ int main(int argc, char** argv)
 		printf("Kernel base: %p\n", leak_kernel_base_reliable());
 		break;
 	case PrintTimings:
-		print_timings();
+		for (int i = 0; i < 10; i++) {
+			print_timings();
+		}
 		break;
 	}
 	
