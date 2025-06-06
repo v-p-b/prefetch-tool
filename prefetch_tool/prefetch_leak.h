@@ -584,7 +584,7 @@ void save_bmp(char* bmp_name, INT64* data, size_t len) {
         GENERIC_WRITE,          // open for writing
         0,                      // do not share
         NULL,                   // default security
-        CREATE_NEW,             // create new file only
+        CREATE_ALWAYS,             // create new file only
         FILE_ATTRIBUTE_NORMAL,  // normal file
         NULL);                  // no attr. template
 
@@ -699,19 +699,7 @@ UINT64 leak_kernel_base_intel_strip()
         memset(data, 0, ARR_SIZE*sizeof(UINT64));
     }
     // Evaluate anomalies
-    /*UINT64 anomaly_size = 0;
-
-    for (UINT64 j = 0; j < ARR_SIZE; j++) {
-        if (ANOMALY_MAP[j] != STRIP_ROUNDS) {
-            if (anomaly_size > 0) {
-                printf("5 star anomaly strip from %llx, length %d\r\n", (KERNEL_LOWER_BOUND + ((j - anomaly_size) * STEP)), anomaly_size);
-            }
-            anomaly_size = 0;
-            continue;
-        }
-        anomaly_size++;
-    }*/
-
+   
     save_bmp("intel_strip.bmp", ANOMALY_MAP,ARR_SIZE);
     UINT64 anomaly_size = 0;
     UINT64 fast_access = 0;
