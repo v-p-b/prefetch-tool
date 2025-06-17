@@ -10,6 +10,8 @@ convert -delay 10 bi_*.bmp out.gif
 
 The new code is very messy (at minimum integer overflows are everywhere) as I implemented new ideas as I went before any planning or proper refactoring, sorry about that!
 
+The code is now also available as a [static library](https://github.com/v-p-b/prefetch-lib/) for easier embedding.
+
 **Original README continues:**
 
 This tool was developed as part of an [exploit targetting Windows 11 24H2](https://exploits.forsale/24h2-nt-exploit/). I am not a side-channel expert at all, so this was very much new territory for me and the code is very hacky 😳 Help improving reliability for different CPU types would be much appreciated.
